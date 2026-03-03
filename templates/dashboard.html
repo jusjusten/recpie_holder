@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recipe Sorter - Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <div>
+          <h1>Your recipes</h1>
+          <p class="muted" id="current-user"></p>
+        </div>
+        <button id="sign-out" type="button">Sign out</button>
+      </header>
+
+      <section class="card">
+        <h2>Import a recipe</h2>
+        <form id="import-form">
+          <label for="recipe-url">Recipe URL</label>
+          <input id="recipe-url" name="recipe-url" type="url" required />
+          <button type="submit">Import</button>
+        </form>
+        <p class="status" id="import-status"></p>
+      </section>
+
+      <section class="card">
+        <h2>Saved recipes</h2>
+        <div id="recipes" class="list"></div>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

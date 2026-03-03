@@ -1,12 +1,35 @@
+# Activate your venv (if not already active):
+# & "C:\Users\Ginod\OneDrive\Desktop\Personal Projects\Recipe Sorter\.venv\Scripts\Activate.ps1"
+
+# Start the server:
+# python app.py
+
+# Test import (grabs ingredients + steps)
+# $body = @{ url = "https://www.bbcgoodfood.com/recipes/easy-pancakes"; user_id = "test-user" } | ConvertTo-Json
+# Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/recipes/import" -ContentType "application/json" -Body $body
+# Where ingredients/steps go
+
+# Ingredients are stored in SQLite in recipes.db, column ingredients_json.
+# Instructions are stored in instructions.
+# Steps are generated from instructions and returned as steps in the API response. See app.py:41-154.
+# How to view them
+
+# Immediate response: the POST response includes ingredients, instructions, and steps.
+# Saved recipes for a user:
+# Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/users/test-user/recipes"
+
+# Single recipe by ID:
+# Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/recipes/1"
 from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 from recipe_scrapers import scrape_me
 
 app = Flask(__name__)
@@ -24,6 +47,7 @@ class Recipe(db.Model):
 	title = db.Column(db.String(512), nullable=False)
 	ingredients_json = db.Column(db.Text, nullable=True)
 	instructions = db.Column(db.Text, nullable=True)
+	tools_json = db.Column(db.Text, nullable=True)
 	image = db.Column(db.String(2048), nullable=True)
 	total_time = db.Column(db.Integer, nullable=True)
 	yields = db.Column(db.String(256), nullable=True)
@@ -39,6 +63,8 @@ class Recipe(db.Model):
 			if self.ingredients_json
 			else [],
 			"instructions": self.instructions,
+			"steps": split_steps(self.instructions),
+			"tools": json.loads(self.tools_json) if self.tools_json else [],
 			"image": self.image,
 			"total_time": self.total_time,
 			"yields": self.yields,
@@ -48,14 +74,83 @@ class Recipe(db.Model):
 
 with app.app_context():
 	db.create_all()
+	result = db.session.execute(text("PRAGMA table_info(recipe)"))
+	columns = {row[1] for row in result.fetchall()}
+	if "tools_json" not in columns:
+		db.session.execute(text("ALTER TABLE recipe ADD COLUMN tools_json TEXT"))
+		db.session.commit()
+
+
+
+def split_steps(instructions: str | None) -> List[str]:
+	if not instructions:
+		return []
+	lines = [line.strip() for line in instructions.splitlines()]
+	steps = [line for line in lines if line]
+	return steps
+
+
+def extract_tools(instructions: str, ingredients: List[str]) -> List[str]:
+	text = " ".join([instructions or "", " ".join(ingredients)]).lower()
+	known_tools = [
+		"oven",
+		"stovetop",
+		"microwave",
+		"air fryer",
+		"slow cooker",
+		"pressure cooker",
+		"grill",
+		"skillet",
+		"frying pan",
+		"saucepan",
+		"pot",
+		"baking sheet",
+		"baking pan",
+		"casserole dish",
+		"mixing bowl",
+		"whisk",
+		"spatula",
+		"tongs",
+		"ladle",
+		"cutting board",
+		"chef's knife",
+		"paring knife",
+		"peeler",
+		"grater",
+		"colander",
+		"strainer",
+		"measuring cups",
+		"measuring spoons",
+		"food processor",
+		"blender",
+		"stand mixer",
+		"hand mixer",
+		"thermometer",
+	]
+	found = []
+	for tool in known_tools:
+		if tool in text:
+			found.append(tool)
+	return sorted(set(found))
 
 
 def scrape_recipe(url: str) -> Dict[str, Any]:
-	scraper = scrape_me(url, wild_mode=True)
+	try:
+		scraper = scrape_me(url, wild_mode=True)
+	except AttributeError as exc:
+		message = str(exc)
+		if "list" in message and "get" in message:
+			scraper = scrape_me(url, wild_mode=False)
+		else:
+			raise
+	ingredients = scraper.ingredients() or []
+	instructions = scraper.instructions() or ""
 	return {
 		"title": scraper.title() or "Untitled Recipe",
-		"ingredients": scraper.ingredients() or [],
-		"instructions": scraper.instructions() or "",
+		"ingredients": ingredients,
+		"instructions": instructions,
+		"steps": split_steps(instructions),
+		"tools": extract_tools(instructions, ingredients),
 		"image": scraper.image() or "",
 		"total_time": scraper.total_time() or None,
 		"yields": scraper.yields() or "",
@@ -67,10 +162,24 @@ def health() -> Any:
 	return jsonify({"status": "ok"})
 
 
+@app.get("/")
+def login_page() -> Any:
+	return render_template("index.html")
+
+
+@app.get("/dashboard")
+def dashboard_page() -> Any:
+	return render_template("dashboard.html")
+
+
 @app.post("/recipes/import")
 def import_recipe() -> Any:
-	payload = request.get_json(silent=True) or {}
-	url = (payload.get("url") or "").strip()
+	payload = request.get_json(silent=True)
+	if isinstance(payload, list):
+		payload = payload[0] if payload else {}
+	if not isinstance(payload, dict):
+		payload = {}
+	url = (payload.get("url") or "").strip().rstrip("/")
 	user_id = (payload.get("user_id") or "").strip()
 
 	if not url or not user_id:
@@ -78,6 +187,12 @@ def import_recipe() -> Any:
 			jsonify({"error": "url and user_id are required"}),
 			400,
 		)
+
+	existing = Recipe.query.filter_by(user_id=user_id, url=url).first()
+	if existing:
+		response = existing.to_dict()
+		response["duplicate"] = True
+		return jsonify(response), 200
 
 	try:
 		recipe_data = scrape_recipe(url)
@@ -93,6 +208,7 @@ def import_recipe() -> Any:
 		title=recipe_data["title"],
 		ingredients_json=json.dumps(recipe_data["ingredients"]),
 		instructions=recipe_data["instructions"],
+		tools_json=json.dumps(recipe_data["tools"]),
 		image=recipe_data["image"],
 		total_time=recipe_data["total_time"],
 		yields=recipe_data["yields"],
