@@ -22,6 +22,7 @@
 # Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/recipes/1"
 from __future__ import annotations
 
+import argparse
 import json
 from datetime import datetime
 from typing import Any, Dict, List
@@ -236,4 +237,17 @@ def get_recipe(recipe_id: int) -> Any:
 
 
 if __name__ == "__main__":
-	app.run(debug=True)
+	parser = argparse.ArgumentParser(description="Recipe Sorter")
+	parser.add_argument(
+		"--scan",
+		help="Scan a recipe URL and print parsed data as JSON",
+	)
+	args = parser.parse_args()
+
+	if args.scan:
+		try:
+			print(json.dumps(scrape_recipe(args.scan), indent=2))
+		except Exception as exc:  # pragma: no cover - CLI passthrough
+			raise SystemExit(f"Scan failed: {exc}")
+	else:
+		app.run(debug=True)

@@ -1,102 +1,35 @@
-Overview
-This Flask-based REST API allows users to import, store, and retrieve recipes from cooking websites. It uses web scraping to extract recipe data and stores it in a SQLite database for persistent access.
+Recipe Sorter
 
-Core Features
-1. Recipe Import
-Endpoint: POST /recipes/import
+Quick start
+1. Create and activate venv (first time only)
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
 
-When a user submits a recipe URL, the system:
-Scrapes the website using recipe_scrapers
-Extracts structured data (title, ingredients, instructions, etc.)
-Parses instructions into individual steps
-Identifies kitchen tools mentioned in the recipe
-Stores everything in the database
-Returns the complete recipe object
+2. Install dependencies
+  pip install -r requirements.txt
 
-2. Recipe Storage
-Database Schema:
-id: Unique identifier for each recipe
-user_id: Links recipes to specific users
-url: Original source URL
-title: Recipe name
-ingredients_json: JSON array of ingredients
-instructions: Raw instruction text
-tools_json: JSON array of kitchen tools
-image: Recipe image URL
-total_time: Preparation + cooking time in minutes
-yields: Serving size information
-created_at: Timestamp of import
+3. Run the web app
+  python app.py
 
-3. Recipe Retrieval
-GET /users/<user_id>/recipes - List all recipes for a user (newest first)
-GET /recipes/<recipe_id> - Get detailed information for a specific recipe
+The app will be available at:
+http://127.0.0.1:5000
 
-Key Functions Explained
-scrape_recipe(url)
-Takes a recipe URL
-Uses recipe_scrapers to extract content
+Recipe scanner options
 
-Returns a dictionary with:
-title: Recipe name
-ingredients: List of ingredients
-instructions: Raw instruction text
-steps: Instructions split into individual steps
-tools: Kitchen tools identified
-image: Recipe image URL
-total_time: Total cooking time
-yields: Serving size
+Option A: Scan from the UI
+1. Open http://127.0.0.1:5000
+2. Enter any username
+3. Go to Dashboard
+4. Paste a recipe URL in Import a recipe
 
--split_steps(instructions)
--Converts raw instruction text into a list of individual steps
--Filters out empty lines and trims whitespace
--Returns a clean, numbered list of instructions
--extract_tools(instructions, ingredients)
--Scans recipe text for common kitchen tools
--Searches both instructions and ingredients
--Returns a deduplicated list of tools (e.g., "oven", "skillet", "mixing bowl")
-
-Data Flow
-User submits URL → API validates input
-Web scraping → Extract structured recipe data
-Data processing → Split steps, identify tools
-Database storage → Save as JSON + text fields
-Response → Return complete recipe object
-
-API Response Example 
-{
-  "id": 1,
-  "user_id": "test-user",
-  "url": "https://www.bbcgoodfood.com/recipes/easy-pancakes",
-  "title": "Easy Pancakes",
-  "ingredients": ["100g flour", "2 eggs", "300ml milk"],
-  "instructions": "Mix ingredients... Cook until golden...",
-  "steps": [
-    "Mix ingredients in a bowl",
-    "Heat a non-stick pan",
-    "Cook until golden on both sides"
-  ],
-  "tools": ["bowl", "whisk", "frying pan", "spatula"],
-  "image": "https://example.com/pancakes.jpg",
-  "total_time": 20,
-  "yields": "8 pancakes",
-  "created_at": "2024-01-15T10:30:00"
-}
-Database Management
-SQLite database (recipes.db) for simple deployment
-
-Automatic table creation on startup
-
-Schema migrations for new fields (like tools_json)
-
-JSON storage for flexible data structures
-
-Testing with PowerShell
-# Import a recipe
+Option B: Scan from API (PowerShell)
 $body = @{ url = "https://www.bbcgoodfood.com/recipes/easy-pancakes"; user_id = "test-user" } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:5000/recipes/import" -ContentType "application/json" -Body $body
 
-# List user recipes
-Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/users/test-user/recipes"
+Option C: Scan directly from terminal (no API call required)
+python app.py --scan "https://www.bbcgoodfood.com/recipes/easy-pancakes"
 
-# Get specific recipe
-Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:5000/recipes/1"
+Useful endpoints
+- GET /health
+- GET /users/<user_id>/recipes
+- GET /recipes/<recipe_id>
